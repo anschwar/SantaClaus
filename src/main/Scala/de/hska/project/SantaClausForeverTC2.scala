@@ -1,6 +1,7 @@
 package de.hska.project
 
 import scala.collection.mutable.ListBuffer
+import scala.concurrent.stm._
 import scala.language.postfixOps
 import scala.util.Random
 
@@ -79,7 +80,7 @@ class SantaClausForeverTC2() {
 
     def work(): Boolean = {
       try {
-        group join match {
+        group join() match {
           case (entrance, exit) =>
             Thread sleep randomDelay
             entrance passGate()
@@ -90,20 +91,20 @@ class SantaClausForeverTC2() {
         case ie: InterruptedException => Thread.currentThread().interrupt()
           return false
       }
-      return true
+      true
     }
 
     override def run() = {
-      forever(work)
+      forever(work())
     }
   }
 
   case class Elf(group: Group, id: Int) extends Helper {
-    override def doTask = println("Elf " + id + " meeting in the study")
+    override def doTask() = println("Elf " + id + " meeting in the study")
   }
 
   case class Reindeer(group: Group, id: Int) extends Helper {
-    override def doTask = println("Reindeer " + id + " delivering toys")
+    override def doTask() = println("Reindeer " + id + " delivering toys")
   }
 
   case class Santa(elfGroup: Group, reindeerGroup: Group) extends Thread {
@@ -114,10 +115,10 @@ class SantaClausForeverTC2() {
     def waitForHelpers(): Boolean = {
       // lookup if the reindeers are ready
       atomic { implicit transaction =>
-        (reindeerGroup await, Task.Deliver)
+        (reindeerGroup await(), Task.Deliver)
         // if not see if there are enough elves
       } orAtomic { implicit transaction =>
-        (elfGroup await, Task.Study)
+        (elfGroup await(), Task.Study)
       } match {
         // if one group is ready get the gates and the task and operate them
         case ((entrance, exit), task) =>
@@ -135,11 +136,11 @@ class SantaClausForeverTC2() {
             elfCounter.single.set(elfCount + 1)
           }
       }
-      return true
+      true
     }
 
     override def run(): Unit = {
-      executionTime = time(forever(waitForHelpers))
+      executionTime = time(forever(waitForHelpers()))
       elfGroupsHelped = elfCounter.single.get
     }
   }
@@ -152,7 +153,7 @@ class SantaClausForeverTC2() {
   // recursively call yourself. But how can we interrupt
   def forever[A](function: => A): Unit = {
     function match {
-      case false => return // we are done
+      case false => // we are done
       case _ => forever(function)
     }
   }
@@ -170,7 +171,7 @@ class SantaClausForeverTC2() {
     val reindeerGroup = new Group(18)
 
     val santa = new Santa(elfGroup, reindeerGroup)
-    santa start
+    santa start()
 
     // start the elves
     for (i <- 1 to 20)
@@ -180,15 +181,15 @@ class SantaClausForeverTC2() {
       threads += Reindeer(reindeerGroup, i)
 
     for (thread <- threads)
-      thread start
+      thread start()
 
-    santa join
-
-    for (thread <- threads)
-      thread interrupt
+    santa join()
 
     for (thread <- threads)
-      thread join
+      thread interrupt()
+
+    for (thread <- threads)
+      thread join()
 
     (executionTime, elfGroupsHelped)
   }
